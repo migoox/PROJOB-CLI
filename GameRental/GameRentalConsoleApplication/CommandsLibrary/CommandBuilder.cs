@@ -18,9 +18,11 @@ namespace GameRentalClient
         private Func<List<object>, Command, int> _initFunc;
         private Func<string[], List<object>> _parser;
 
+        private Action<Command, object> _undoAction;
+        private Action<Command, object> _redoAction;
+
         private Action<Command, StreamWriter> _plainTextSerializer;
         private Action<Command, StreamReader> _plainTextDeserializer;
-
         private Action<Command, XmlWriter> _xmlSerializer;
         private Action<Command, XmlReader> _xmlDeserializer;
 
@@ -31,22 +33,19 @@ namespace GameRentalClient
         private string _manual;
         private string _commandFamily;
         private bool _queueable;
-
+        private bool _historyable;
         public string Name => _name;
         public string CommandFamily => _commandFamily;
         public string Usage => _usage;
         public string Description => _description;
         public string Manual => _manual;
-
         public Func<List<object>, Command, int> InitFunc => _initFunc;
         public Func<List<object>, Command, int> Call => _function;
         public Func<string[], List<object>> Parser => _parser;
-
         public Action<Command, StreamWriter> PlainTextSerializer => _plainTextSerializer;
         public Action<Command, StreamReader> PlainTextDeserializer => _plainTextDeserializer;
         public Action<Command, XmlWriter> XmlSerializer => _xmlSerializer;
         public Action<Command, XmlReader> XmlDesereializer => _xmlDeserializer;
-
         public CommandBuilder()
         {
             _name = "";
@@ -64,10 +63,22 @@ namespace GameRentalClient
             {
                 throw new NotImplementedException();
             };
+            _queueable = false;
+            _historyable = false;
             _usage = "";
             _description = "";
             _manual = "";
             _commandFamily = "";
+
+            _undoAction = (thisCmd, snapshot) =>
+            {
+                return;
+            };
+
+            _redoAction = (thisCmd, snapshot) =>
+            {
+                thisCmd.Execute();
+            };
 
             _plainTextSerializer = (thisCmd, writer) =>
             {
@@ -121,6 +132,18 @@ namespace GameRentalClient
             return this;
         }
 
+        public CommandBuilder WithUndoAction(Action<Command, object> undoAction)
+        {
+            _undoAction = undoAction;
+            return this;
+        }
+
+        public CommandBuilder WithRedoAction(Action<Command, object> redoAction)
+        {
+            _redoAction = redoAction;
+            return this;
+        }
+
         public CommandBuilder WithXmlSerializer(Action<Command, XmlWriter> xmlSerializer)
         {
             _xmlSerializer = xmlSerializer;
@@ -143,6 +166,12 @@ namespace GameRentalClient
         public CommandBuilder WithQueueable(bool queueable)
         {
             _queueable = queueable;
+            return this;
+        }
+
+        public CommandBuilder WithHistoryable(bool historyable)
+        {
+            _historyable = historyable;
             return this;
         }
 
@@ -181,7 +210,8 @@ namespace GameRentalClient
                 throw new InvalidOperationException("Command call is required");
             }
 
-            return new Command(_name, _function, _hasParser, _parser, _hasInitFunc, _initFunc,_commandFamily, _queueable,
+            return new Command(_name, _function, _hasParser, _parser, _hasInitFunc, _initFunc,_commandFamily, 
+                _queueable, _historyable, _undoAction, _redoAction,
                 _plainTextSerializer, _plainTextDeserializer, _xmlSerializer, _xmlDeserializer);
         }
     }

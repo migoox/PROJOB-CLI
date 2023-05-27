@@ -44,5 +44,10 @@ namespace GameRental
         {
             _isDeleted = true;
         }
+
+        public void Restore()
+        {
+            _isDeleted = false;
+        }
     }
 }
