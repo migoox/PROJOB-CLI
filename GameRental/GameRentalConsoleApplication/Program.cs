@@ -12,6 +12,8 @@ using System.Net.NetworkInformation;
 using System.Xml;
 using GameRental.Builders;
 using System.Xml.Serialization;
+using System.Reflection;
+using System.Collections.Generic;
 
 namespace GameRentalClient
 {
@@ -219,8 +221,6 @@ namespace GameRentalClient
                     {
                         throw new CommandTooManyArgumentsException();
                     }
-                   
-
                     return 0;
                 }));
 
@@ -326,11 +326,24 @@ namespace GameRentalClient
 
             var addCommandBuilder = new CommandBuilder()
                 .WithQueueable(true)
+                .WithHistoryable(true)
                 .WithName("add")
                 .WithDescription("adds a new object of a particular type")
                 .WithManual(
                     "\r\n    add <name_of_the_class> base|secondary\r\n\r\nwhere base|secondary defines the representation in which the object should be created. After\r\nreceiving the first line the program waits for further instructions from the user\r\nThe format for each line is as follows:\r\n\r\n\t<name_of_field>=<value>\r\n\r\nA line like that means that the value of the field <name_of_field> for the newly created object\r\nshould be equal to <value>. The user can enter however many lines they want in such a format (even\r\nrepeating the fields that they have already defined - in this case the previous value is overridden)\r\ndescribing the object until using one of the following commands: DONE or EXIT\r\n\r\nAfter receiving the DONE command the creation process should finish and the program should add a new\r\nobject described by the user to the collection. After receiving the EXIT command the creation\r\nprocess should also finish but no new object is created and nothing is added to the collection. The\r\ndata provided by the user is also discarded.\r\n\r\nExample usages:\r\n    add book base\r\n    [Available fields: 'title, year, pageCount']\r\n    title=\"The Right Stuff\"\r\n    year=1993\r\n    name=abc\r\n    [Some sensible error message]\r\n    DONE\r\n    [Book created]\r\n\r\nadd book secondary\r\n    [Available fields: \"title, year, pageCount\"]\r\n    title=\"The Right Stuff\"\r\n    EXIT\r\n    [Book creation abandoned]\r\n")
                 .WithUsage("add <name_of_the_class> base|secondary")
+                .WithUndoAction((thisCmd, snapshot) =>
+                {
+                    (string tableName, int index) = ((string, int))snapshot;
+                    try
+                    {
+                        Database.Instance.GetTable(tableName).Remove(index);
+                    }
+                    catch (Exception exc)
+                    {
+                        throw new CommandException(exc.Message);
+                    }
+                })
                 .WithParser(args =>
                 {
                     if (args.Length == 0)
@@ -534,14 +547,17 @@ namespace GameRentalClient
                         builder.With(pair.Key, pair.Value);
                     }
 
+                    int index = -1;
                     if (type == "base")
                     {
-                        Database.Instance.Add(tableName, builder.BuildRep0());
+                        index = Database.Instance.Add(tableName, builder.BuildRep0());
                     }
                     else
                     {
-                        Database.Instance.Add(tableName, builder.BuildRep8AndAdapt());
+                        index = Database.Instance.Add(tableName, builder.BuildRep8AndAdapt());
                     }
+
+                    thisCmd.Snapshot = (tableName, index);
 
                     return 0;
                 });
@@ -549,10 +565,32 @@ namespace GameRentalClient
 
             Application.Instance.AddCommandBuilder(new CommandBuilder()
                 .WithQueueable(true)
+                .WithHistoryable(true)
                 .WithName("edit")
                 .WithUsage("edit <name_of_the_class> [<requirement> ...].")
                 .WithManual("This command allows editing a given record if requirement conditions (which work the\r\nsame as in the find command) specify one record uniquely. Editing works the same as\r\nadding a new element\r\n\t<name_of_field>=<value>\r\nreplace the field's old value with a new one until DONE or EXIT is provided. When \r\nEXIT is chosen, it does not modify any value.")
                 .WithDescription("edits values of the given record")
+                .WithUndoAction((thisCmd, snapshot) =>
+                {
+                    try
+                    {
+                        var snap = (List<(IDatabaseEntity, Dictionary<string, object?>)>)snapshot;
+
+                        foreach (var entry in snap)
+                        {
+                            foreach (var pair in entry.Item2)
+                            {
+                                if (pair.Value == null) continue;
+
+                                entry.Item1.SetField(pair.Key, pair.Value);
+                            }
+                        }
+                    }
+                    catch (Exception exc)
+                    {
+                        throw new CommandException(exc.Message);
+                    }
+                })
                 .WithParser(args =>
                 {
                     if (args.Length == 0)
@@ -622,26 +660,63 @@ namespace GameRentalClient
 
                     Dictionary<string, object?> dictionary = (Dictionary<string, object?>)args[args.Count - 1];
 
+                    List<(IDatabaseEntity, Dictionary<string, object?>)> snap =
+                        new List<(IDatabaseEntity, Dictionary<string, object?>)>();
+
                     foreach (var entry in Filter(findArgs))
                     {
+                        var newSnapElem = (entry, new Dictionary<string, object?>());
+
                         foreach (var pair in dictionary)
                         {
                             if (pair.Value == null) continue;
 
+                            newSnapElem.Item2.Add(pair.Key, entry.GetField(pair.Key));
                             entry.SetField(pair.Key, pair.Value);
                         }
+
+                        snap.Add(newSnapElem);
                     }
+
+                    thisCmd.Snapshot = snap;
 
                     return 0;
                 }));
                 
             Application.Instance.AddCommandBuilder(new CommandBuilder()
                 .WithQueueable(true)
+                .WithHistoryable(true)
                 .WithName("delete")
                 .WithUsage("delete <name_of_the_class> [<requirement> ...].")
                 .WithManual(
                     "delete <name_of_the_class> [<requirement> …] - removes given record from collections.\n\nThis command allows deleting a given record if requirement conditions (which work the\nsame as in the find and edit command) specify one record uniquely.")
                 .WithDescription("allows deleting a given record if requirement conditions specify one record uniquely")
+                .WithUndoAction((thisCmd, snapshot) =>
+                {
+                    try
+                    {
+                        var elem = (IDatabaseEntity)snapshot;
+                        elem.Restore();
+                        Database.Instance.TryToAddWithId(elem.TypeName, elem, elem.Id);
+                    }
+                    catch (Exception exc)
+                    {
+                        throw new CommandException(exc.Message);
+                    }
+                })
+                .WithRedoAction((thisCmd, snapshot) =>
+                {
+                    try
+                    {
+                        var elem = (IDatabaseEntity)snapshot;
+                        elem.Delete();
+                        Database.Instance.GetTable(elem.TypeName).Remove(elem.Id);
+                    }
+                    catch (Exception exc)
+                    {
+                        throw new CommandException(exc.Message);
+                    }
+                })
                 .WithParser(args =>
                 {
                     if (args.Length == 0)
@@ -673,12 +748,15 @@ namespace GameRentalClient
 
                     var elem = filtered.First();
                     elem.Delete();
+                    thisCmd.Snapshot = elem;
+
                     Database.Instance.GetTable(elem.TypeName).Remove(elem.Id);
 
                     return 0;
                 }));
 
             /* QUEUE FAMILY */
+            #region QUEUE
 
             Application.Instance.AddCommandFamily(new CommandFamilyBuilder()
                 .WithName("queue")
@@ -745,7 +823,7 @@ namespace GameRentalClient
                     return 0;
                 }));
 
-            Application.Instance.AddCommandBuilder(new CommandBuilder()
+            var queueExportBd = new CommandBuilder()
                 .WithFamily("queue")
                 .WithName("export")
                 .WithDescription("exports all commands currently stored in the queue to the specified file")
@@ -788,17 +866,19 @@ namespace GameRentalClient
 
                     if (format == "xml")
                     {
-                        Application.Instance.SerializeQueueToXml(filename);
+                        Application.Instance.SerializeToXml(filename, Application.SerializationType.Queue);
                     }
                     else // plaintext
                     {
-                        Application.Instance.SerializeQueueToPlaintext(filename);
+                        Application.Instance.SerializeToPlaintext(filename, Application.SerializationType.Queue);
                     }
 
                     return 0;
-                }));
+                });
+            Application.Instance.AddCommandBuilder(queueExportBd);
 
-            Application.Instance.AddCommandBuilder(new CommandBuilder()
+            CommandBuilder queueImportBd = 
+            new CommandBuilder()
                 .WithFamily("queue")
                 .WithName("import")
                 .WithDescription("imports all commands currently stored in the specified file into command queue")
@@ -841,15 +921,132 @@ namespace GameRentalClient
 
                     if (format == "xml")
                     {
-                        Application.Instance.DeserializeQueueFromXml(filename);
+                        Application.Instance.DeserializeFromXml(filename, Application.SerializationType.Queue);
                     }
                     else // plaintext
                     {
-                        Application.Instance.DeserializeQueueFromPlaintext(filename);
+                        Application.Instance.DeserializeFromPlaintext(filename, Application.SerializationType.Queue);
+                    }
+
+                    return 0;
+                });
+                Application.Instance.AddCommandBuilder(queueImportBd);
+            #endregion
+
+            /* HISTORY FAMILY */
+            Application.Instance.AddCommandFamily(new CommandFamilyBuilder()
+                .WithName("history")
+                .WithDescription("allows command history management")
+                .Build());
+
+            Application.Instance.AddCommandBuilder(new CommandBuilder()
+                .WithFamily("history")
+                .WithName("print")
+                .WithManual("This command should print each stored in history commands its name and all command\r\nparameters in human-readable form.")
+                .WithDescription("prints all commands currently stored in the history")
+                .WithCall((args, thisCmd) =>
+                {
+                    int index = 1;
+                    Console.WriteLine("\nHistory state:\n");
+                    foreach (var cmd in Application.Instance.History())
+                    {
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.Write($"{index}.");
+                        Console.WriteLine($" {cmd}");
+                        Console.ResetColor();
+                        Console.WriteLine($"{cmd.Info}");
+                        Console.ResetColor();
+                        ++index;
+                    }
+                    return 0;
+                }));
+
+            Application.Instance.AddCommandBuilder(new CommandBuilder()
+                .WithFamily("history")
+                .WithName("clear")
+                .WithManual("This command clears all commands which are currently stored in the history.")
+                .WithDescription("clears all commands which are currently stored in the history")
+                .WithCall((args, thisCmd) =>
+                {
+                    Application.Instance.ClearHistory();
+                    return 0;
+                }));
+
+
+            Application.Instance.AddCommandBuilder(new CommandBuilder()
+                .WithName("export")
+                .WithDescription("exports all commands currently stored in the queue to the specified file")
+                .WithUsage("queue export {filename}, queue export {filename} [format]")
+                .WithManual("\tqueue export {filename} [format]\n\nThis command saves all commands from the queue to the file. There are supported \r\ntwo formats \"XML\" (default) and \"plaintext\". The structure of XML should contain \r\nonly necessary fields. The plain text format should be the same as it is in the\r\ncommand line – that means that pasting the content of the file to the console \r\nshould add stored commands.")
+                .WithParser(args =>
+                {
+                    return queueExportBd.Parser(args);
+
+                })
+                .WithCall((args, thisCmd) =>
+                {
+                    string filename = (string)args[0];
+                    string format = (string)args[1];
+
+                    if (format == "xml")
+                    {
+                        Application.Instance.SerializeToXml(filename, Application.SerializationType.History);
+                    }
+                    else // plaintext
+                    {
+                        Application.Instance.SerializeToPlaintext(filename, Application.SerializationType.History);
                     }
 
                     return 0;
                 }));
+
+            Application.Instance.AddCommandBuilder(new CommandBuilder()
+                .WithName("import")
+                .WithDescription("imports all commands currently stored in the specified file into command history")
+                .WithUsage("queue import {filename}")
+                .WithManual("\tqueue import {filename}\n\nThis command imports commands from the specified file to the command history. \r\nThe file format should be XML.")
+                .WithParser(args =>
+                {
+                    return queueImportBd.Parser(args);
+
+                })
+                .WithCall((args, thisCmd) =>
+                {
+                    string filename = (string)args[0];
+                    string format = (string)args[1];
+
+                    if (format == "xml")
+                    {
+                        Application.Instance.DeserializeFromXml(filename, Application.SerializationType.History);
+                    }
+                    else // plaintext
+                    {
+                        Application.Instance.DeserializeFromPlaintext(filename, Application.SerializationType.History);
+                    }
+
+                    return 0;
+                }));
+
+            Application.Instance.AddCommandBuilder(new CommandBuilder()
+                .WithName("undo")
+                .WithManual("This command should print each stored in history commands its name and all command\r\nparameters in human-readable form.")
+                .WithDescription("prints all commands currently stored in the history")
+                .WithCall((args, thisCmd) =>
+                {
+                    Application.Instance.UndoCommand();
+                    return 0;
+                }));
+
+            Application.Instance.AddCommandBuilder(new CommandBuilder()
+                .WithName("redo")
+                .WithManual("This command should print each stored in history commands its name and all command\r\nparameters in human-readable form.")
+                .WithDescription("prints all commands currently stored in the history")
+                .WithCall((args, thisCmd) =>
+                {
+                    Application.Instance.RedoCommand();
+                    return 0;
+                }));
+
 
             Application.Instance.Run();
             return 0;

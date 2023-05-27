@@ -19,7 +19,8 @@ namespace GameRental
     interface IEntityInfo
     {
         public IDictionary Table { get; }
-        public void Add(IDatabaseEntity entity);
+        public int Add(IDatabaseEntity entity);
+        public void AddWithId(IDatabaseEntity entity, int id);
         public void Clear();
     }
     public class Info<T> : IEntityInfo where T : IDatabaseEntity
@@ -31,11 +32,19 @@ namespace GameRental
             get => _table;
         }
 
-        public void Add(IDatabaseEntity entity)
+        public int Add(IDatabaseEntity entity)
         {
             _table.Add(_currentId, (T)entity);
-            _table[_currentId].Id = _currentId++;
+            _table[_currentId].Id = _currentId;
+            return _currentId++;
         }
+
+        public void AddWithId(IDatabaseEntity entity, int id)
+        {
+            _table.Add(id, (T)entity);
+            _table[id].Id = id;
+        }
+
         public void Clear()
         {
             Table.Clear();
@@ -128,11 +137,24 @@ namespace GameRental
             throw new KeyNotFoundException(_keyNotFoundMsg);
         }
 
-        public void Add(string tableName, IDatabaseEntity entity)
+        public int Add(string tableName, IDatabaseEntity entity)
         {
             if (!_tables.ContainsKey(tableName))
                 throw new KeyNotFoundException(_keyNotFoundMsg);
-            _tables[tableName].Add(entity);
+            return _tables[tableName].Add(entity);
+        }
+
+        public int TryToAddWithId(string tableName, IDatabaseEntity entity, int id)
+        {
+            if (!_tables.ContainsKey(tableName))
+                throw new KeyNotFoundException(_keyNotFoundMsg);
+
+            if (!_tables[tableName].Table.Contains(id))
+            {
+                _tables[tableName].AddWithId(entity, id);
+                return id;
+            }
+            return _tables[tableName].Add(entity);
         }
 
         public SyncList<T> GetByIds<T>(int[] ids)

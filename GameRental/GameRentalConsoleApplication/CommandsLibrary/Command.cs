@@ -25,20 +25,32 @@ namespace GameRentalClient
 
         private Action<Command, XmlWriter> _xmlSerializer;
         private Action<Command, XmlReader> _xmlDeserializer;
-            
+
+        private Action<Command, object> _undoAction;
+        private Action<Command, object> _redoAction;
+
         private string[] _notParsedArgs;
 
         private List<object> _args;
 
+        // text that can be displayed in the future e.g. in the queue print
         public string Info { get; set; }
 
+        // data that can be used in serialization/deserialization
         public List<object> ContextData { get; set; } = new List<object>();
+
+        // data that is used by redo/undo function
+        public object Snapshot { get; set; }
 
         public string Input { get; set; }
         public bool Cancel { get; set; }
         public string Name { get; }
 
+        // if Queueable=true or Historyable=true and Init Function is used, serialization/deserialization functions are expected
         public bool Queueable { get; }
+
+        // if true, it is expected that Undo Action is set (Redo is optional)
+        public bool Historyable { get; }
 
         public string CommandFamily { get; }
 
@@ -80,6 +92,9 @@ namespace GameRentalClient
             Func<List<object>, Command, int> initFunc,
             string commandFamily,
             bool queueable,
+            bool historyable,
+            Action<Command, object> undoAction,
+            Action<Command, object> redoAction,
             Action<Command, StreamWriter> plainTextSerializer,
             Action<Command, StreamReader> plainTextDeserializer,
             Action<Command, XmlWriter> xmlSerializer,
@@ -92,6 +107,7 @@ namespace GameRentalClient
             this._initFunc = initFunc;
             this._hasInitFunc = hasInitFunc;
             this.Queueable = queueable;
+            this.Historyable = historyable;
             this.CommandFamily = commandFamily;
             this.Info = "";
             this.Cancel = false;
@@ -99,6 +115,8 @@ namespace GameRentalClient
             this._notParsedArgs = new string[] { };
             this._args = new List<object>();
 
+            this._undoAction = undoAction;
+            this._redoAction = redoAction;
             this._plainTextDeserializer = plainTextDeserializer;
             this._plainTextSerializer = plainTextSerializer;
             this._xmlSerializer = xmlSerializer;
@@ -150,6 +168,30 @@ namespace GameRentalClient
             try
             {
                 _function(Args, this);
+            }
+            catch (CommandException ex)
+            {
+                throw ex;
+            }
+        }
+
+        public void Undo()
+        {     
+            try
+            { 
+                _undoAction(this, Snapshot);
+            }
+            catch (CommandException ex)
+            {
+                throw ex;
+            }
+        }
+
+        public void Redo()
+        {
+            try
+            {
+                _redoAction(this, Snapshot);
             }
             catch (CommandException ex)
             {

@@ -15,5 +15,6 @@ namespace GameRental
         public string ToString();
         public void SetField(string name, object arg);
         public void Delete();
+        public void Restore();
     }
 }

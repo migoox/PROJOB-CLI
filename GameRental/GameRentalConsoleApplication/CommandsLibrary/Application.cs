@@ -12,6 +12,7 @@ using System.Xml.Serialization;
 using System.IO;
 using System.Xml;
 using System.Reflection.PortableExecutable;
+using System.Collections;
 
 namespace GameRentalClient
 {
@@ -23,6 +24,10 @@ namespace GameRentalClient
         private Dictionary<string, CommandFamily> _commandFamilies = new Dictionary<string, CommandFamily>();
         private List<Command> _commandQueue = new List<Command>();
 
+
+        private List<Command> _commandHistory = new List<Command>();
+        private int _commandHistoryIndex = -1;
+
         public bool CommandQueueActive { get; set; } = false;
         public bool ShowCommandQueueOnAddMessage { get; set; } = true;
         public string CommandQeueuOnAddMessage { get; set; } = "Command has been queued.";
@@ -33,6 +38,11 @@ namespace GameRentalClient
         public List<Command> CommandQueue
         {
             get => _commandQueue;
+        }
+
+        public List<Command> CommandHistory
+        {
+            get => _commandHistory;
         }
 
         public Dictionary<string, CommandBuilder> Commands
@@ -50,6 +60,14 @@ namespace GameRentalClient
             get
             {
                 return instance;
+            }
+        }
+
+        public IEnumerable<Command> History()
+        {
+            for (int i = 0; i <= _commandHistoryIndex; i++)
+            {
+                yield return _commandHistory[i];
             }
         }
 
@@ -83,6 +101,59 @@ namespace GameRentalClient
             }
             _commandQueue.Clear();
         }
+
+        public void AddToHistory(Command cmd)
+        {
+            _commandHistory.RemoveRange(_commandHistoryIndex + 1, _commandHistory.Count - _commandHistoryIndex - 1);
+
+            _commandHistory.Add(cmd);
+            _commandHistoryIndex = _commandHistory.Count - 1;
+        }
+
+        public void ClearHistory()
+        {
+            _commandHistory.Clear();
+            _commandHistoryIndex = -1;
+        }
+
+        public void UndoCommand()
+        {
+            if (_commandHistoryIndex == -1)
+            {
+                DisplayWarning("There is nothing to undo.");
+                return;
+            }
+
+            try
+            {
+                _commandHistory[_commandHistoryIndex].Undo();
+            }
+            catch (CommandException exc)
+            {
+                HandleException(exc, _commandHistory[_commandHistoryIndex]);
+            }
+            _commandHistoryIndex--;
+        }
+
+        public void RedoCommand()
+        {
+            if (_commandHistoryIndex + 1 == _commandHistory.Count)
+            {
+                DisplayWarning("There is nothing to redo.");
+                return;
+            }
+            _commandHistoryIndex++;
+
+            try
+            {
+                _commandHistory[_commandHistoryIndex].Redo();
+            }
+            catch (CommandException exc)
+            {
+                HandleException(exc, _commandHistory[_commandHistoryIndex]);
+            }
+        }
+
 
         public void Run()
         {
@@ -121,6 +192,11 @@ namespace GameRentalClient
                         try
                         {
                             cmd.Execute();
+
+                            if (cmd.Historyable)
+                            {
+                                AddToHistory(cmd);
+                            }
                         }
                         catch (CommandException exc)
                         {
@@ -378,7 +454,13 @@ namespace GameRentalClient
             _commandQueue.Add(command);
         }
 
-        public void SerializeQueueToXml(string filePath)
+        public enum SerializationType
+        {
+            Queue,
+            History
+        }
+
+        public void SerializeToXml(string filePath, SerializationType type)
         {
             StringWriter stringWriter = new StringWriter();
             using (XmlTextWriter xmlWriter = new XmlTextWriter(stringWriter))
@@ -391,26 +473,55 @@ namespace GameRentalClient
                 xmlWriter.WriteStartDocument();
                 xmlWriter.WriteStartElement("Commands");
 
-                foreach (var cmd in Application.Instance.CommandQueue)
+                if (type == SerializationType.Queue)
                 {
-                    xmlWriter.WriteStartElement("Command");
-                    xmlWriter.WriteAttributeString("Name", $"{cmd.Name}");
-                    xmlWriter.WriteStartElement("Arguments");
-
-                    foreach (string arg in cmd.NotParsedArgs)
+                    foreach (var cmd in _commandQueue)
                     {
-                        xmlWriter.WriteStartElement("Argument");
-                        xmlWriter.WriteValue(arg);
+                        xmlWriter.WriteStartElement("Command");
+                        xmlWriter.WriteAttributeString("Name", $"{cmd.Name}");
+                        xmlWriter.WriteStartElement("Arguments");
+
+                        foreach (string arg in cmd.NotParsedArgs)
+                        {
+                            xmlWriter.WriteStartElement("Argument");
+                            xmlWriter.WriteValue(arg);
+                            xmlWriter.WriteEndElement();
+                        }
+
+                        xmlWriter.WriteEndElement();
+
+                        xmlWriter.WriteStartElement("Context");
+                        cmd.WriteXml(xmlWriter);
+                        xmlWriter.WriteEndElement();
+
                         xmlWriter.WriteEndElement();
                     }
+                }
+                else
+                {
+                    for (int i = 0; i <= _commandHistoryIndex; ++i)
+                    {
+                        var cmd = _commandHistory[i];
 
-                    xmlWriter.WriteEndElement();
+                        xmlWriter.WriteStartElement("Command");
+                        xmlWriter.WriteAttributeString("Name", $"{cmd.Name}");
+                        xmlWriter.WriteStartElement("Arguments");
 
-                    xmlWriter.WriteStartElement("Context");
-                    cmd.WriteXml(xmlWriter);
-                    xmlWriter.WriteEndElement();
+                        foreach (string arg in cmd.NotParsedArgs)
+                        {
+                            xmlWriter.WriteStartElement("Argument");
+                            xmlWriter.WriteValue(arg);
+                            xmlWriter.WriteEndElement();
+                        }
 
-                    xmlWriter.WriteEndElement();
+                        xmlWriter.WriteEndElement();
+
+                        xmlWriter.WriteStartElement("Context");
+                        cmd.WriteXml(xmlWriter);
+                        xmlWriter.WriteEndElement();
+
+                        xmlWriter.WriteEndElement();
+                    }
                 }
 
                 xmlWriter.WriteEndElement();
@@ -426,7 +537,7 @@ namespace GameRentalClient
             xmlDoc.Save(filePath);
         }
 
-        public void DeserializeQueueFromXml(string filePath)
+        public void DeserializeFromXml(string filePath, SerializationType type)
         {
             List<Command> cmds = new List<Command>();
             using (XmlReader xmlReader = XmlReader.Create(filePath))
@@ -482,25 +593,65 @@ namespace GameRentalClient
                 }
             }
 
-            _commandQueue.AddRange(cmds);
-        }
-
-        public void SerializeQueueToPlaintext(string filePath)
-        {
-            using (StreamWriter writer = new StreamWriter(filePath))
+            if (type == SerializationType.Queue)
             {
-                foreach (var cmd in Application.Instance.CommandQueue)
+                this._commandQueue.AddRange(cmds);
+            }
+            else
+            {
+                this.ClearHistory();
+
+                foreach (var cmd in cmds)
                 {
-                    writer.WriteLine(cmd.Name + " " + string.Join(" ", cmd.NotParsedArgs));
-                    cmd.WritePlainText(writer);
+                    try
+                    {
+                        cmd.Execute();
+                        if (cmd.Historyable)
+                        {
+                            AddToHistory(cmd);
+                        }
+                    }
+                    catch (CommandException exc)
+                    {
+                        HandleException(exc, cmd);
+                    }
                 }
             }
         }
 
-        public void DeserializeQueueFromPlaintext(string filePath, bool truncateQueue = false)
+        public void SerializeToPlaintext(string filePath, SerializationType type)
         {
-            if (truncateQueue) _commandQueue.Clear();
-            
+            List<Command> reference;
+
+            if (type == SerializationType.Queue)
+                reference = _commandQueue;
+            else
+                reference = _commandHistory;
+
+            using (StreamWriter writer = new StreamWriter(filePath))
+            {
+                if (type == SerializationType.Queue)
+                {
+                    foreach (var cmd in reference)
+                    {
+                        writer.WriteLine(cmd.Name + " " + string.Join(" ", cmd.NotParsedArgs));
+                        cmd.WritePlainText(writer);
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i <= _commandHistoryIndex; ++i)
+                    {
+                        var cmd = _commandHistory[i];
+                        writer.WriteLine(cmd.Name + " " + string.Join(" ", cmd.NotParsedArgs));
+                        cmd.WritePlainText(writer);
+                    }
+                }
+            }
+        }
+
+        public void DeserializeFromPlaintext(string filePath, SerializationType type)
+        {
             using (StreamReader reader = new StreamReader(filePath))
             {
                 while (!reader.EndOfStream)
@@ -515,7 +666,26 @@ namespace GameRentalClient
 
                     cmd.ReadPlainText(reader);
 
-                    _commandQueue.Add(cmd);
+                    if (type == SerializationType.Queue)
+                    {
+                        this.AddToQueue(cmd);
+                    }
+                    else
+                    {
+                        try
+                        {
+                            cmd.Execute();
+
+                            if (cmd.Historyable)
+                            {
+                                AddToHistory(cmd);
+                            }
+                        }
+                        catch (CommandException exc)
+                        {
+                            HandleException(exc, cmd);
+                        }
+                    }
                 }
             }
         }
