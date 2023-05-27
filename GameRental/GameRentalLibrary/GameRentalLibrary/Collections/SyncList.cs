@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -15,6 +16,31 @@ namespace GameRental.Collections
         public SyncList()
         {
 
+        }
+
+        private void SyncRefsWithDatabase(IList list, IList deleted)
+        {
+            for (int i = list.Count - 1; i >= 0; --i)
+            {
+                AbstractDatabaseEntity elem = (AbstractDatabaseEntity)list[i];
+
+                if (elem.IsDeleted)
+                {
+                    deleted.Add(list[i]);
+                    list.RemoveAt(i);
+                }
+            }
+
+            for (int i = deleted.Count - 1; i >= 0; --i)
+            {
+                AbstractDatabaseEntity elem = (AbstractDatabaseEntity)deleted[i];
+
+                if (!elem.IsDeleted)
+                {
+                    list.Add(list[i]);
+                    deleted.RemoveAt(i);
+                }
+            }
         }
 
         public SyncList(List<T> list)
@@ -41,7 +67,6 @@ namespace GameRental.Collections
                     _deleted.RemoveAt(i);
                 }
             }
-
             return _list;
         }
     }

@@ -1,4 +1,4 @@
-﻿using GameRental;
+using GameRental;
 using GameRental.Adapters;
 using GameRental.Rep0;
 using GameRental.Rep8;
