@@ -24,13 +24,21 @@ namespace GameRental
 
         protected Dictionary<string, Action<object>> Setters { get; init; }
 
-        public static void SyncRefsWithDatabase(IList list)
+        public static void SyncRefsWithDatabase(IList list, IList deleted)
         {
             for (int i = list.Count - 1; i >= 0; --i)
             {
                 AbstractDatabaseEntity elem = (AbstractDatabaseEntity)list[i];
 
                 if (elem.IsDeleted) 
+                    list.RemoveAt(i);
+            }
+
+            for (int i = deleted.Count - 1; i >= 0; --i)
+            {
+                AbstractDatabaseEntity elem = (AbstractDatabaseEntity)list[i];
+
+                if (elem.IsDeleted)
                     list.RemoveAt(i);
             }
         }

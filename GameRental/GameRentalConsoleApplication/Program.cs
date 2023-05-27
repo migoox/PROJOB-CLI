@@ -11,7 +11,6 @@ using System.Globalization;
 using System.Net.NetworkInformation;
 using System.Xml;
 using GameRental.Builders;
-
 using System.Xml.Serialization;
 
 namespace GameRentalClient
