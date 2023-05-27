@@ -975,7 +975,7 @@ namespace GameRentalClient
 
             Application.Instance.AddCommandBuilder(new CommandBuilder()
                 .WithName("export")
-                .WithDescription("exports all commands currently stored in the queue to the specified file")
+                .WithDescription("exports all commands currently stored in the history to the specified file")
                 .WithUsage("queue export {filename}, queue export {filename} [format]")
                 .WithManual("\tqueue export {filename} [format]\n\nThis command saves all commands from the queue to the file. There are supported \r\ntwo formats \"XML\" (default) and \"plaintext\". The structure of XML should contain \r\nonly necessary fields. The plain text format should be the same as it is in the\r\ncommand line – that means that pasting the content of the file to the console \r\nshould add stored commands.")
                 .WithParser(args =>
@@ -1029,8 +1029,7 @@ namespace GameRentalClient
 
             Application.Instance.AddCommandBuilder(new CommandBuilder()
                 .WithName("undo")
-                .WithManual("This command should print each stored in history commands its name and all command\r\nparameters in human-readable form.")
-                .WithDescription("prints all commands currently stored in the history")
+                .WithDescription("reverts the changes made by the most recently executed command")
                 .WithCall((args, thisCmd) =>
                 {
                     Application.Instance.UndoCommand();
@@ -1039,8 +1038,7 @@ namespace GameRentalClient
 
             Application.Instance.AddCommandBuilder(new CommandBuilder()
                 .WithName("redo")
-                .WithManual("This command should print each stored in history commands its name and all command\r\nparameters in human-readable form.")
-                .WithDescription("prints all commands currently stored in the history")
+                .WithDescription("reapplies the changes made by the most recently undone command")
                 .WithCall((args, thisCmd) =>
                 {
                     Application.Instance.RedoCommand();
