@@ -23,6 +23,10 @@ namespace GameRentalClient
         private Dictionary<string, CommandFamily> _commandFamilies = new Dictionary<string, CommandFamily>();
         private List<Command> _commandQueue = new List<Command>();
 
+        public bool CommandQueueActive { get; set; } = false;
+        public bool ShowCommandQueueOnAddMessage { get; set; } = true;
+        public string CommandQeueuOnAddMessage { get; set; } = "Command has been queued.";
+
         private string _helpMessage;
         private bool _exit;
 
@@ -102,8 +106,14 @@ namespace GameRentalClient
 
                     if (cmd.Cancel) continue;
 
-                    if (cmd.Queueable)
+                    if (cmd.Queueable && CommandQueueActive)
                     {
+                        if (ShowCommandQueueOnAddMessage)
+                        {
+                            Console.ForegroundColor = ConsoleColor.Yellow;
+                            Console.WriteLine(CommandQeueuOnAddMessage);
+                            Console.ResetColor();
+                        }
                         _commandQueue.Add(cmd);
                     }
                     else
@@ -204,7 +214,9 @@ namespace GameRentalClient
         public void DisplayWarning(string warning)
         {
             Console.ForegroundColor = ConsoleColor.DarkYellow;
-            Console.WriteLine("[WARNING] " + warning);
+            Console.Write("[WARNING] ");
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine(warning);
             Console.ResetColor();
         }
 

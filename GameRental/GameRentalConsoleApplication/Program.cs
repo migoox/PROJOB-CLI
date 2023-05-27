@@ -143,6 +143,7 @@ namespace GameRentalClient
             return dictionary;
         }
 
+
         static int Main(string[] args)
         {
             Dictionary<string, Func<IComparable, IComparable, bool>> delegates = new Dictionary<string, Func<IComparable, IComparable, bool>>();
@@ -514,7 +515,7 @@ namespace GameRentalClient
                     }
 
                     Console.ForegroundColor = ConsoleColor.Green;
-                    Console.WriteLine($"\nSuccess: {tableName} changes queued\n");
+                    Console.WriteLine($"\nSuccess\n");
                     Console.ResetColor();
 
                     return 0;
@@ -610,7 +611,7 @@ namespace GameRentalClient
                     }
 
                     Console.ForegroundColor = ConsoleColor.Green;
-                    Console.WriteLine($"\nSuccess: {tableName} changes queued\n");
+                    Console.WriteLine($"\nSuccess\n");
                     Console.ResetColor();
 
                     return 0;
@@ -686,6 +687,20 @@ namespace GameRentalClient
 
             Application.Instance.AddCommandBuilder(new CommandBuilder()
                 .WithFamily("queue")
+                .WithName("begin")
+                .WithDescription("begins the queue")
+                .WithManual("TO DO")
+                .WithCall((args, thisCmd) =>
+                {
+                    if (Application.Instance.CommandQueueActive)
+                        Application.Instance.DisplayWarning("Queue has already begun, use queue dismiss/commit");
+
+                    Application.Instance.CommandQueueActive = true;
+                    return 0;
+                }));
+
+            Application.Instance.AddCommandBuilder(new CommandBuilder()
+                .WithFamily("queue")
                 .WithName("print")
                 .WithManual("This command should print each stored in queue commands its name and all command\r\nparameters in human-readable form.")
                 .WithDescription("prints all commands currently stored in the queue")
@@ -713,6 +728,7 @@ namespace GameRentalClient
                 .WithDescription("clears all commands which are currently stored in the queue")
                 .WithCall((args, thisCmd) =>
                 {
+                    Application.Instance.CommandQueueActive = false;
                     Application.Instance.ClearCommandQueue();
                     return 0;
                 }));
@@ -724,6 +740,7 @@ namespace GameRentalClient
                 .WithManual("This command executes all commands stored in the queue in order of their \r\naddition. After that queue should be cleared and proper collection modified.")
                 .WithCall((args, thisCmd) =>
                 {
+                    Application.Instance.CommandQueueActive = false;
                     Application.Instance.ExecuteCommandQueue();
                     return 0;
                 }));
