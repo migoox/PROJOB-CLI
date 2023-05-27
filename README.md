@@ -10,9 +10,7 @@ Some of the Object-oriented patterns used are:
 
 In the whole project, reflecion was prohibited.
 
-![obraz](https://github.com/migoox/PROJOB-CLI/assets/56317134/1d3c10e5-d39f-476d-b2a7-5b875e8b6000)
-
-
+<img src="https://github.com/migoox/PROJOB-CLI/assets/56317134/1d3c10e5-d39f-476d-b2a7-5b875e8b6000" width=400>
 ## Tasks description
 The project undertaken during the course involved developing an application to store and manage data related to various objects in two different representation formats. Throughout the project, a focus was placed on modularity, allowing for easy addition of new functionalities without requiring extensive modifications to the existing codebase. 
 
