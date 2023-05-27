@@ -10,6 +10,9 @@ Some of the Object-oriented patterns used are:
 
 In the whole project, reflecion was prohibited.
 
+![obraz](https://github.com/migoox/PROJOB-CLI/assets/56317134/1d3c10e5-d39f-476d-b2a7-5b875e8b6000)
+
+
 ## Tasks description
 The project undertaken during the course involved developing an application to store and manage data related to various objects in two different representation formats. Throughout the project, a focus was placed on modularity, allowing for easy addition of new functionalities without requiring extensive modifications to the existing codebase. 
 
@@ -46,7 +49,7 @@ The following commands has been added:
 
 ### Task 6: Commands history
  In this part of the project commands mechanism has been expanded with a history of all executed commands. Additional commands include
-- `history` - lists all executed commands.
+- `history print` - lists all executed commands.
 - `undo` - reverts the changes made by the most recently executed command.
 - `redo` - reapplies the changes made by the most recently undone command.
 
